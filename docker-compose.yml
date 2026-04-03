@@ -1,0 +1,7 @@
+services:
+  genius-mcp:
+    container_name: genius-mcp-server
+    build: .
+    volumes:
+      - ./.env:/app/.env
+    restart: unless-stopped
