@@ -209,3 +209,6 @@ __marimo__/
 #Other files to ignore
 .claude
 .claude/
+claude
+claude/
+settings.local.json
