@@ -27,3 +27,4 @@ mcp = FastMCP(
 )
 
 from mcp_components import mcp_tools  # noqa: E402, F401 — registers tools on mcp
+import mcp_components.mcp_prompts  # noqa: E402, F401 — registers prompts on mcp
