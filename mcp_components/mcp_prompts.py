@@ -4,20 +4,13 @@ import logging
 from mcp.types import TextContent
 from fastmcp.prompts.base import Message, PromptResult
 
-from app import mcp, genius_client, GENIUS_ACCESS_TOKEN  # noqa: F401
+from app import mcp
+import mcp_components.genius_api as genius_api
+from mcp_components.genius_api import GeniusAPIError, compute_trust_level
 
 logger = logging.getLogger("genius_mcp")
 
 _TRUST_ORDER = {"artist_verified": 0, "accepted": 1, "unreviewed": 2}
-
-
-def _compute_trust_level(annotation: dict) -> str:
-    if annotation.get("verified"):
-        return "artist_verified"
-    elif annotation.get("state") == "accepted":
-        return "accepted"
-    else:
-        return "unreviewed"
 
 
 # ---------------------------------------------------------------------------
@@ -27,10 +20,10 @@ def _compute_trust_level(annotation: dict) -> str:
 async def _search_song(song_title: str, artist_name: str) -> dict | None:
     """Return the first song hit for the query, or None if not found."""
     q = f"{song_title} {artist_name}".strip()
-    response = await genius_client.get("/search", params={"q": q, "type": "song"})
-    if response.status_code != 200:
+    try:
+        hits = await genius_api.search(q)
+    except GeniusAPIError:
         return None
-    hits = response.json().get("response", {}).get("hits", [])
     if not hits:
         return None
     song = hits[0].get("result", {})
@@ -44,12 +37,10 @@ async def _search_song(song_title: str, artist_name: str) -> dict | None:
 
 async def _search_artist(artist_name: str) -> dict | None:
     """Return the first artist hit for the query, or None if not found."""
-    response = await genius_client.get(
-        "/search", params={"q": artist_name, "type": "artist"}
-    )
-    if response.status_code != 200:
+    try:
+        hits = await genius_api.search(artist_name)
+    except GeniusAPIError:
         return None
-    hits = response.json().get("response", {}).get("hits", [])
     if not hits:
         return None
     song = hits[0].get("result", {})
@@ -62,12 +53,10 @@ async def _search_artist(artist_name: str) -> dict | None:
 
 
 async def _get_song_details(song_id: int) -> dict:
-    response = await genius_client.get(
-        f"/songs/{song_id}", params={"text_format": "plain"}
-    )
-    if response.status_code != 200:
+    try:
+        song = await genius_api.get_song(song_id)
+    except GeniusAPIError:
         return {}
-    song = response.json().get("response", {}).get("song", {})
     description_raw = song.get("description", {})
     description = (
         description_raw.get("plain", "") if isinstance(description_raw, dict) else ""
@@ -88,12 +77,10 @@ async def _get_song_details(song_id: int) -> dict:
 
 
 async def _get_artist_details(artist_id: int) -> dict:
-    response = await genius_client.get(
-        f"/artists/{artist_id}", params={"text_format": "plain"}
-    )
-    if response.status_code != 200:
+    try:
+        artist = await genius_api.get_artist(artist_id)
+    except GeniusAPIError:
         return {}
-    artist = response.json().get("response", {}).get("artist", {})
     description_raw = artist.get("description", {})
     description = (
         description_raw.get("plain", "") if isinstance(description_raw, dict) else ""
@@ -108,35 +95,27 @@ async def _get_artist_details(artist_id: int) -> dict:
 
 
 async def _get_artist_top_songs(artist_id: int, per_page: int = 3) -> list[dict]:
-    response = await genius_client.get(
-        f"/artists/{artist_id}/songs",
-        params={"sort": "popularity", "per_page": per_page},
-    )
-    if response.status_code != 200:
+    try:
+        songs = await genius_api.get_artist_songs(artist_id, sort="popularity", per_page=per_page)
+    except GeniusAPIError:
         return []
-    songs = response.json().get("response", {}).get("songs", [])
     return [{"song_id": s.get("id"), "title": s.get("title", "")} for s in songs]
 
 
 async def _get_referents(song_id: int) -> list[dict]:
     """Return raw list of referent dicts for a song."""
-    response = await genius_client.get(
-        "/referents",
-        params={"song_id": song_id, "text_format": "plain", "per_page": 50},
-    )
-    if response.status_code != 200:
+    try:
+        return await genius_api.get_referents(song_id)
+    except GeniusAPIError:
         return []
-    return response.json().get("response", {}).get("referents", [])
 
 
 async def _get_annotation_detail(annotation_id: int) -> str | None:
     """Return the plain-text body of an annotation, or None if the fetch fails."""
-    response = await genius_client.get(
-        f"/annotations/{annotation_id}", params={"text_format": "plain"}
-    )
-    if response.status_code != 200:
+    try:
+        annotation = await genius_api.get_annotation(annotation_id)
+    except GeniusAPIError:
         return None
-    annotation = response.json().get("response", {}).get("annotation", {})
     body_raw = annotation.get("body", {})
     return body_raw.get("plain", "") if isinstance(body_raw, dict) else ""
 
@@ -197,7 +176,7 @@ async def analyze_song(song_title: str, artist_name: str = "") -> PromptResult:
         raw_annotations.append({
             "annotation_id": annotation_id,
             "fragment": referent.get("fragment", ""),
-            "trust_level": _compute_trust_level(annotation),
+            "trust_level": compute_trust_level(annotation),
         })
 
     # Step 4 — Fetch full annotation detail for every annotation_id

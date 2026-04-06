@@ -1,18 +1,11 @@
 import logging
 from typing import Optional
 
-from app import mcp, genius_client
+from app import mcp
+import mcp_components.genius_api as genius_api
+from mcp_components.genius_api import GeniusAPIError, compute_trust_level
 
 logger = logging.getLogger("genius_mcp")
-
-
-def _compute_trust_level(item: dict) -> str:
-    if item.get("verified"):
-        return "artist_verified"
-    elif item.get("state") == "accepted":
-        return "accepted"
-    else:
-        return "unreviewed"
 
 
 def _extract_annotation(referent: dict) -> dict:
@@ -28,7 +21,7 @@ def _extract_annotation(referent: dict) -> dict:
         "annotation_id": annotation.get("id"),
         "fragment": referent.get("fragment", ""),
         "body": body,
-        "trust_level": _compute_trust_level(annotation),
+        "trust_level": compute_trust_level(annotation),
         "state": annotation.get("state"),
         "verified": annotation.get("verified", False),
         "community": annotation.get("community", False),
@@ -50,15 +43,11 @@ async def search_song(query: str, per_page: int = 5) -> list[dict]:
         per_page: Number of results to return (max 10, default 5)
     """
     logger.info("search_song | query=%r per_page=%d", query, per_page)
-    response = await genius_client.get(
-        "/search", params={"q": query, "per_page": per_page}
-    )
-    logger.debug("GET /search → %d", response.status_code)
-    if response.status_code != 200:
-        logger.error("search_song failed | status=%d", response.status_code)
-        return [{"error": f"Genius API returned status {response.status_code}"}]
+    try:
+        hits = await genius_api.search(query, per_page=per_page)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
 
-    hits = response.json().get("response", {}).get("hits", [])
     results = []
     for hit in hits:
         song = hit.get("result", {})
@@ -92,15 +81,11 @@ async def search_artist(query: str, per_page: int = 5) -> list[dict]:
     logger.info("search_artist | query=%r per_page=%d", query, per_page)
     # The Genius public API /search endpoint only returns songs. We extract unique
     # artists from the primary_artist field of the song results.
-    response = await genius_client.get(
-        "/search", params={"q": query, "per_page": min(per_page * 3, 50)}
-    )
-    logger.debug("GET /search (for artists) → %d", response.status_code)
-    if response.status_code != 200:
-        logger.error("search_artist failed | status=%d", response.status_code)
-        return [{"error": f"Genius API returned status {response.status_code}"}]
+    try:
+        hits = await genius_api.search(query, per_page=min(per_page * 3, 50))
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
 
-    hits = response.json().get("response", {}).get("hits", [])
     seen_ids: set = set()
     results = []
     for hit in hits:
@@ -139,15 +124,11 @@ async def search_album(query: str, per_page: int = 5) -> list[dict]:
     """
     logger.info("search_album | query=%r per_page=%d", query, per_page)
     # Search for songs matching the query, then resolve albums via song detail calls.
-    response = await genius_client.get(
-        "/search", params={"q": query, "per_page": min(per_page * 3, 50)}
-    )
-    logger.debug("GET /search (for albums) → %d", response.status_code)
-    if response.status_code != 200:
-        logger.error("search_album failed | status=%d", response.status_code)
-        return [{"error": f"Genius API returned status {response.status_code}"}]
+    try:
+        hits = await genius_api.search(query, per_page=min(per_page * 3, 50))
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
 
-    hits = response.json().get("response", {}).get("hits", [])
     seen_album_ids: set = set()
     results = []
 
@@ -159,10 +140,11 @@ async def search_album(query: str, per_page: int = 5) -> list[dict]:
             continue
 
         # Fetch full song details to get album info
-        detail_resp = await genius_client.get(f"/songs/{song_id}", params={"text_format": "plain"})
-        if detail_resp.status_code != 200:
+        try:
+            song = await genius_api.get_song(song_id)
+        except GeniusAPIError:
             continue
-        album = detail_resp.json().get("response", {}).get("song", {}).get("album")
+        album = song.get("album")
         if not album:
             continue
         album_id = album.get("id")
@@ -194,15 +176,11 @@ async def get_song_details(song_id: int) -> dict:
         song_id: The Genius song ID (obtained from search_song)
     """
     logger.info("get_song_details | song_id=%d", song_id)
-    response = await genius_client.get(
-        f"/songs/{song_id}", params={"text_format": "plain"}
-    )
-    logger.debug("GET /songs/%d → %d", song_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("get_song_details failed | song_id=%d status=%d", song_id, response.status_code)
-        return {"error": f"Genius API returned status {response.status_code}"}
+    try:
+        song = await genius_api.get_song(song_id)
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
 
-    song = response.json().get("response", {}).get("song", {})
     description_raw = song.get("description", {})
     description = (
         description_raw.get("plain", "")
@@ -238,15 +216,11 @@ async def get_artist_details(artist_id: int) -> dict:
         artist_id: The Genius artist ID (obtained from search_artist)
     """
     logger.info("get_artist_details | artist_id=%d", artist_id)
-    response = await genius_client.get(
-        f"/artists/{artist_id}", params={"text_format": "plain"}
-    )
-    logger.debug("GET /artists/%d → %d", artist_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("get_artist_details failed | artist_id=%d status=%d", artist_id, response.status_code)
-        return {"error": f"Genius API returned status {response.status_code}"}
+    try:
+        artist = await genius_api.get_artist(artist_id)
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
 
-    artist = response.json().get("response", {}).get("artist", {})
     description_raw = artist.get("description", {})
     description = (
         description_raw.get("plain", "")
@@ -276,24 +250,18 @@ async def get_album_details(album_id: int) -> dict:
         album_id: The Genius album ID (obtained from search_album)
     """
     logger.info("get_album_details | album_id=%d", album_id)
-    response = await genius_client.get(
-        f"/albums/{album_id}", params={"text_format": "plain"}
-    )
-    logger.debug("GET /albums/%d → %d", album_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("get_album_details failed | album_id=%d status=%d", album_id, response.status_code)
-        return {"error": f"Genius API returned status {response.status_code}"}
+    try:
+        album = await genius_api.get_album(album_id)
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
 
-    data = response.json().get("response", {})
-    album = data.get("album", {})
     description_raw = album.get("description", {})
     description = (
         description_raw.get("plain", "")
         if isinstance(description_raw, dict)
         else ""
     )
-
-    tracks_raw = data.get("album", {}).get("album_appearances", [])
+    tracks_raw = album.get("album_appearances", [])
     tracklist = [
         {
             "song_id": t.get("song", {}).get("id"),
@@ -336,16 +304,11 @@ async def get_artist_songs(
         page: Page number for pagination (default 1)
     """
     logger.info("get_artist_songs | artist_id=%d sort=%r per_page=%d page=%d", artist_id, sort, per_page, page)
-    response = await genius_client.get(
-        f"/artists/{artist_id}/songs",
-        params={"sort": sort, "per_page": per_page, "page": page},
-    )
-    logger.debug("GET /artists/%d/songs → %d", artist_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("get_artist_songs failed | artist_id=%d status=%d", artist_id, response.status_code)
-        return [{"error": f"Genius API returned status {response.status_code}"}]
+    try:
+        songs = await genius_api.get_artist_songs(artist_id, sort=sort, per_page=per_page, page=page)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
 
-    songs = response.json().get("response", {}).get("songs", [])
     results = [
         {
             "song_id": s.get("id"),
@@ -380,20 +343,14 @@ async def get_song_annotations(
                 "unreviewed". If not provided, all annotations are returned.
     """
     logger.info("get_song_annotations | song_id=%d filter=%r", song_id, filter)
-    response = await genius_client.get(
-        "/referents",
-        params={"song_id": song_id, "text_format": "plain", "per_page": 50},
-    )
-    logger.debug("GET /referents (song_id=%d) → %d", song_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("get_song_annotations failed | song_id=%d status=%d", song_id, response.status_code)
-        return [{"error": f"Genius API returned status {response.status_code}"}]
+    try:
+        referents = await genius_api.get_referents(song_id)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
 
-    referents = response.json().get("response", {}).get("referents", [])
     results = []
     for referent in referents:
         annotation = referent.get("annotations", [{}])[0]
-        trust_level = _compute_trust_level(annotation)
 
         if filter is not None:
             if filter == "artist_verified" and not annotation.get("verified"):
@@ -405,24 +362,8 @@ async def get_song_annotations(
             elif filter == "unreviewed" and annotation.get("state") != "needs_exegesis":
                 continue
 
-        body_raw = annotation.get("body", {})
-        body = body_raw.get("plain", "") if isinstance(body_raw, dict) else ""
-        authors = [
-            {"username": a.get("user", {}).get("login", ""), "iq": a.get("pinned_role")}
-            for a in annotation.get("authors", [])
-        ]
+        results.append(_extract_annotation(referent))
 
-        results.append({
-            "annotation_id": annotation.get("id"),
-            "fragment": referent.get("fragment", ""),
-            "body": body,
-            "trust_level": trust_level,
-            "state": annotation.get("state"),
-            "verified": annotation.get("verified", False),
-            "community": annotation.get("community", False),
-            "votes_total": annotation.get("votes_total", 0),
-            "authors": authors,
-        })
     logger.info("get_song_annotations | returned %d annotations (filter=%r)", len(results), filter)
     return results
 
@@ -438,15 +379,11 @@ async def get_annotation_detail(annotation_id: int) -> dict:
         annotation_id: The Genius annotation ID
     """
     logger.info("get_annotation_detail | annotation_id=%d", annotation_id)
-    response = await genius_client.get(
-        f"/annotations/{annotation_id}", params={"text_format": "plain"}
-    )
-    logger.debug("GET /annotations/%d → %d", annotation_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("get_annotation_detail failed | annotation_id=%d status=%d", annotation_id, response.status_code)
-        return {"error": f"Genius API returned status {response.status_code}"}
+    try:
+        annotation, referent = await genius_api.get_annotation(annotation_id)
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
 
-    annotation = response.json().get("response", {}).get("annotation", {})
     body_raw = annotation.get("body", {})
     body = body_raw.get("plain", "") if isinstance(body_raw, dict) else ""
     authors = [
@@ -455,14 +392,14 @@ async def get_annotation_detail(annotation_id: int) -> dict:
     ]
     result = {
         "annotation_id": annotation.get("id"),
+        "fragment": referent.get("fragment", ""),
         "body": body,
-        "trust_level": _compute_trust_level(annotation),
+        "trust_level": compute_trust_level(annotation),
         "state": annotation.get("state"),
         "verified": annotation.get("verified", False),
         "community": annotation.get("community", False),
         "votes_total": annotation.get("votes_total", 0),
         "authors": authors,
-        "created_at": annotation.get("created_at"),
     }
     logger.info("get_annotation_detail | trust_level=%r votes=%d", result["trust_level"], result["votes_total"])
     return result

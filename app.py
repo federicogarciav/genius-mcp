@@ -1,21 +1,4 @@
-import os
-from dotenv import load_dotenv
-import httpx
 from fastmcp import FastMCP
-
-load_dotenv()
-
-GENIUS_ACCESS_TOKEN = os.getenv("GENIUS_ACCESS_TOKEN")
-if not GENIUS_ACCESS_TOKEN:
-    raise RuntimeError(
-        "GENIUS_ACCESS_TOKEN is not set. Copy .env.example to .env and add your token "
-        "from https://genius.com/api-clients"
-    )
-
-genius_client = httpx.AsyncClient(
-    base_url="https://api.genius.com",
-    headers={"Authorization": f"Bearer {GENIUS_ACCESS_TOKEN}"},
-)
 
 mcp = FastMCP(
     name="Genius MCP Server",
