@@ -67,16 +67,6 @@ async def get_artist(artist_id: int) -> dict:
     return response.json().get("response", {}).get("artist", {})
 
 
-async def get_album(album_id: int) -> dict:
-    """GET /albums/{album_id}. Returns the album object. Raises GeniusAPIError on non-200."""
-    response = await genius_client.get(f"/albums/{album_id}", params={"text_format": "plain"})
-    logger.debug("GET /albums/%d → %d", album_id, response.status_code)
-    if response.status_code != 200:
-        logger.error("GET /albums/%d failed | status=%d", album_id, response.status_code)
-        raise GeniusAPIError(response.status_code, f"/albums/{album_id}")
-    return response.json().get("response", {}).get("album", {})
-
-
 async def get_artist_songs(
     artist_id: int,
     sort: str = "popularity",

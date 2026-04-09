@@ -107,64 +107,6 @@ async def search_artist(query: str, per_page: int = 5) -> list[dict]:
 
 
 @mcp.tool()
-async def search_album(query: str, per_page: int = 5) -> list[dict]:
-    """Search Genius for an album by name or artist + album name.
-
-    Use this when the user wants to explore an album, its tracklist, or context.
-    Returns album IDs required for fetching album details.
-
-    Note: The Genius public API does not support direct album search. This tool
-    finds albums by searching for related songs and resolving their album via
-    get_song_details. For best results, include both the album name and artist name
-    in the query (e.g. "A Night at the Opera Queen").
-
-    Args:
-        query: The search query, ideally "Album Name Artist Name"
-        per_page: Number of results to return (max 10, default 5)
-    """
-    logger.info("search_album | query=%r per_page=%d", query, per_page)
-    # Search for songs matching the query, then resolve albums via song detail calls.
-    try:
-        hits = await genius_api.search(query, per_page=min(per_page * 3, 50))
-    except GeniusAPIError as e:
-        return [{"error": f"Genius API returned status {e.status_code}"}]
-
-    seen_album_ids: set = set()
-    results = []
-
-    for hit in hits:
-        if len(results) >= per_page:
-            break
-        song_id = hit.get("result", {}).get("id")
-        if not song_id:
-            continue
-
-        # Fetch full song details to get album info
-        try:
-            song = await genius_api.get_song(song_id)
-        except GeniusAPIError:
-            continue
-        album = song.get("album")
-        if not album:
-            continue
-        album_id = album.get("id")
-        if not album_id or album_id in seen_album_ids:
-            continue
-        seen_album_ids.add(album_id)
-        results.append({
-            "album_id": album_id,
-            "name": album.get("name"),
-            "full_title": album.get("full_title"),
-            "artist_name": album.get("artist", {}).get("name"),
-            "url": album.get("url"),
-            "release_date": album.get("release_date_for_display"),
-        })
-
-    logger.info("search_album | returned %d albums", len(results))
-    return results
-
-
-@mcp.tool()
 async def get_song_details(song_id: int) -> dict:
     """Fetch full metadata and editorial information for a specific song by its Genius song ID.
 
@@ -236,52 +178,6 @@ async def get_artist_details(artist_id: int) -> dict:
         "followers_count": artist.get("followers_count"),
     }
     logger.info("get_artist_details | name=%r verified=%s", result["name"], result["is_verified"])
-    return result
-
-
-@mcp.tool()
-async def get_album_details(album_id: int) -> dict:
-    """Fetch full metadata for a specific album by its Genius album ID.
-
-    Includes the tracklist with song IDs, which can then be used to fetch details or
-    annotations for individual songs.
-
-    Args:
-        album_id: The Genius album ID (obtained from search_album)
-    """
-    logger.info("get_album_details | album_id=%d", album_id)
-    try:
-        album = await genius_api.get_album(album_id)
-    except GeniusAPIError as e:
-        return {"error": f"Genius API returned status {e.status_code}"}
-
-    description_raw = album.get("description", {})
-    description = (
-        description_raw.get("plain", "")
-        if isinstance(description_raw, dict)
-        else ""
-    )
-    tracks_raw = album.get("album_appearances", [])
-    tracklist = [
-        {
-            "song_id": t.get("song", {}).get("id"),
-            "title": t.get("song", {}).get("title"),
-            "url": t.get("song", {}).get("url"),
-        }
-        for t in tracks_raw
-        if t.get("song")
-    ]
-    result = {
-        "album_id": album.get("id"),
-        "name": album.get("name"),
-        "full_title": album.get("full_title"),
-        "artist_name": album.get("artist", {}).get("name"),
-        "url": album.get("url"),
-        "release_date": album.get("release_date"),
-        "description": description,
-        "tracklist": tracklist,
-    }
-    logger.info("get_album_details | name=%r tracks=%d", result["name"], len(tracklist))
     return result
 
 

@@ -113,7 +113,7 @@ async def _get_referents(song_id: int) -> list[dict]:
 async def _get_annotation_detail(annotation_id: int) -> str | None:
     """Return the plain-text body of an annotation, or None if the fetch fails."""
     try:
-        annotation = await genius_api.get_annotation(annotation_id)
+        annotation, _ = await genius_api.get_annotation(annotation_id)
     except GeniusAPIError:
         return None
     body_raw = annotation.get("body", {})
