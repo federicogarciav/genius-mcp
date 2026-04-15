@@ -6,7 +6,7 @@
 
 **An MCP server that brings the power of [Genius](https://genius.com) into your AI assistant.**
 
-Query songs, artists, lyrics annotations, and editorial knowledge through a clean set of tools and prompts — powered by the Genius public API.
+Query songs, artists, lyrics annotations, and editorial knowledge through a clean set of tools and prompts — powered by both the official Genius API and the `lyricsgenius` Python library.
 
 </div>
 
@@ -45,15 +45,18 @@ The Genius MCP Server exposes the Genius.com knowledge base to any MCP-compatibl
 
 ## Tools
 
-| Tool | Description |
-|---|---|
-| `search_song` | Search Genius for songs matching a query. Returns song IDs, titles, artists, and annotation counts. |
-| `search_artist` | Search Genius for an artist by name. Returns artist IDs and basic profile info. |
-| `get_song_details` | Fetch full metadata and editorial description for a song by its Genius ID. |
-| `get_artist_details` | Fetch full profile and editorial bio for an artist by their Genius ID. |
-| `get_artist_songs` | List songs by an artist, sortable by `popularity` or `release_date`, with pagination. |
-| `get_song_annotations` | Fetch all annotations for a song, optionally filtered by trust level (`artist_verified`, `accepted`, `unreviewed`). |
-| `get_annotation_detail` | Fetch the full text and metadata of a single annotation by its ID. |
+Some tools call the **official Genius API** (`api.genius.com`) using your access token. Others use the **`lyricsgenius` Python library**, which accesses Genius's undocumented public API — these endpoints are not part of the official API contract and may change without notice.
+
+| Tool | Description | Backend |
+|---|---|---|
+| `search_song` | Search Genius for songs matching a query. Returns song IDs, titles, artists, and annotation counts. | Official API |
+| `search_artist` | Search Genius for an artist by name. Returns artist IDs and basic profile info. | Official API |
+| `get_song_details` | Fetch full metadata and editorial description for a song by its Genius ID. | Official API |
+| `get_artist_details` | Fetch full profile and editorial bio for an artist by their Genius ID. | Official API |
+| `get_artist_songs` | List songs by an artist, sortable by `popularity` or `release_date`, with pagination. | Official API |
+| `get_song_annotations` | Fetch all annotations for a song, optionally filtered by trust level (`artist_verified`, `accepted`, `unreviewed`). | Official API |
+| `get_annotation_detail` | Fetch the full text and metadata of a single annotation by its ID. | Official API |
+| `get_song_questions` | Fetch user-submitted questions and answers for a song, with pagination. Only questions that have an accepted answer are returned. | `lyricsgenius` (public undocumented API) |
 
 ---
 

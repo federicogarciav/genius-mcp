@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import os
 
 import httpx
+import lyricsgenius
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,6 +19,8 @@ genius_client = httpx.AsyncClient(
     base_url="https://api.genius.com",
     headers={"Authorization": f"Bearer {_token}"},
 )
+
+_public_api = lyricsgenius.PublicAPI(_token)
 
 logger = logging.getLogger("genius_mcp")
 
@@ -109,3 +113,29 @@ async def get_annotation(annotation_id: int) -> tuple[dict, dict]:
         raise GeniusAPIError(response.status_code, f"/annotations/{annotation_id}")
     data = response.json().get("response", {})
     return data.get("annotation", {}), data.get("referent", {})
+
+
+async def get_song_questions(
+    song_id: int,
+    per_page: int = 20,
+    page: int = 1,
+) -> dict:
+    """Calls genius.com/api/questions via lyricsgenius.PublicAPI.
+    Returns the response dict. Raises GeniusAPIError on non-200."""
+    endpoint = "genius.com/api/questions"
+    try:
+        result = await asyncio.to_thread(
+            _public_api.questions,
+            song_id=song_id,
+            per_page=per_page,
+            page=page,
+            text_format="plain",
+        )
+    except AssertionError as e:
+        # lyricsgenius raises AssertionError with message "Unexpected response status code: N..."
+        parts = str(e).split("status code: ")
+        status_code = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+        logger.error("GET %s failed | song_id=%d status=%d", endpoint, song_id, status_code)
+        raise GeniusAPIError(status_code, endpoint) from e
+    logger.debug("GET %s (song_id=%d) → 200", endpoint, song_id)
+    return result

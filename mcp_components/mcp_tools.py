@@ -299,3 +299,48 @@ async def get_annotation_detail(annotation_id: int) -> dict:
     }
     logger.info("get_annotation_detail | trust_level=%r votes=%d", result["trust_level"], result["votes_total"])
     return result
+
+
+@mcp.tool()
+async def get_song_questions(
+    song_id: int,
+    per_page: int = 20,
+    page: int = 1,
+) -> list[dict]:
+    """Fetch user-submitted questions and answers for a specific song.
+
+    Args:
+        song_id: The Genius song ID (obtained from search_song or get_song_details)
+        per_page: Number of questions to fetch from the API (max 50, default 20)
+        page: Page number for pagination (default 1)
+    """
+    logger.info("get_song_questions | song_id=%d per_page=%d page=%d", song_id, per_page, page)
+    try:
+        data = await genius_api.get_song_questions(song_id, per_page=per_page, page=page)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
+
+    results = []
+    for q in data.get("questions", []):
+        ans = q.get("answer") or {}
+        if not ans.get("id"):
+            continue
+        body_raw = q.get("body", {})
+        question_body = body_raw.get("plain", "") if isinstance(body_raw, dict) else str(body_raw)
+        ans_body_raw = ans.get("body", {})
+        answer_body = (
+            ans_body_raw.get("plain", "")
+            if isinstance(ans_body_raw, dict)
+            else str(ans_body_raw) if ans_body_raw else ""
+        )
+        results.append({
+            "question": question_body,
+            "answer": answer_body,
+            "votes_total": ans.get("votes_total", 0),
+        })
+
+    if not results:
+        return [{"info": "No answered questions found for this song on this page."}]
+
+    logger.info("get_song_questions | returned %d answered questions", len(results))
+    return results

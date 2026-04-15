@@ -1,5 +1,6 @@
 fastmcp
 httpx
+lyricsgenius
 python-dotenv
 pytest
 pytest-asyncio
