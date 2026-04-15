@@ -115,6 +115,59 @@ async def get_annotation(annotation_id: int) -> tuple[dict, dict]:
     return data.get("annotation", {}), data.get("referent", {})
 
 
+async def search_albums(q: str, per_page: int = 5) -> dict:
+    """Calls lyricsgenius.PublicAPI.search_albums(). Returns raw response dict. Raises GeniusAPIError on failure."""
+    endpoint = "genius.com/api/search/album"
+    try:
+        result = await asyncio.to_thread(_public_api.search_albums, q, per_page=per_page)
+    except AssertionError as e:
+        parts = str(e).split("status code: ")
+        status_code = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+        logger.error("GET %s failed | q=%r status=%d", endpoint, q, status_code)
+        raise GeniusAPIError(status_code, endpoint) from e
+    logger.debug("GET %s (q=%r) → 200", endpoint, q)
+    return result
+
+
+async def get_artist_albums(artist_id: int, per_page: int = 20, page: int = 1) -> dict:
+    """Calls lyricsgenius.PublicAPI.artist_albums(). Returns raw response dict. Raises GeniusAPIError on failure."""
+    endpoint = f"genius.com/api/artists/{artist_id}/albums"
+    try:
+        result = await asyncio.to_thread(
+            _public_api.artist_albums, artist_id, per_page=per_page, page=page
+        )
+    except AssertionError as e:
+        parts = str(e).split("status code: ")
+        status_code = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+        logger.error("GET %s failed | artist_id=%d status=%d", endpoint, artist_id, status_code)
+        raise GeniusAPIError(status_code, endpoint) from e
+    logger.debug("GET %s (artist_id=%d) → 200", endpoint, artist_id)
+    return result
+
+
+async def get_album(album_id: int) -> dict:
+    """GET /albums/{album_id}. Returns the album object. Raises GeniusAPIError on non-200."""
+    response = await genius_client.get(f"/albums/{album_id}", params={"text_format": "plain"})
+    logger.debug("GET /albums/%d → %d", album_id, response.status_code)
+    if response.status_code != 200:
+        logger.error("GET /albums/%d failed | status=%d", album_id, response.status_code)
+        raise GeniusAPIError(response.status_code, f"/albums/{album_id}")
+    return response.json().get("response", {}).get("album", {})
+
+
+async def get_album_tracks(album_id: int, per_page: int = 50, page: int = 1) -> dict:
+    """GET /albums/{album_id}/tracks. Returns the tracks list. Raises GeniusAPIError on non-200."""
+    response = await genius_client.get(
+        f"/albums/{album_id}/tracks",
+        params={"text_format": "plain", "per_page": per_page, "page": page},
+    )
+    logger.debug("GET /albums/%d/tracks → %d", album_id, response.status_code)
+    if response.status_code != 200:
+        logger.error("GET /albums/%d/tracks failed | status=%d", album_id, response.status_code)
+        raise GeniusAPIError(response.status_code, f"/albums/{album_id}/tracks")
+    return response.json().get("response", {})
+
+
 async def get_song_questions(
     song_id: int,
     per_page: int = 20,

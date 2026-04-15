@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Optional
 
@@ -302,7 +303,7 @@ async def get_annotation_detail(annotation_id: int) -> dict:
 
 
 @mcp.tool()
-async def get_song_questions(
+async def get_song_questions_and_answers(
     song_id: int,
     per_page: int = 20,
     page: int = 1,
@@ -344,3 +345,121 @@ async def get_song_questions(
 
     logger.info("get_song_questions | returned %d answered questions", len(results))
     return results
+
+
+@mcp.tool()
+async def search_album(query: str, per_page: int = 5) -> list[dict]:
+    """Search Genius for albums matching a query.
+
+    Use this when the user provides an album name and wants to find its Genius ID.
+    Returns a list of album matches with their album_id values, which are required  for get_album_details.
+
+    Args:
+        query: The album name to search for
+        per_page: Number of results to return (max 10, default 5)
+    """
+    logger.info("search_album | query=%r per_page=%d", query, per_page)
+    try:
+        data = await genius_api.search_albums(query, per_page=per_page)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
+
+    results = []
+    for section in data.get("sections", []):
+        for hit in section.get("hits", []):
+            album = hit.get("result", {})
+            results.append({
+                "album_id": album.get("id"),
+                "name": album.get("name"),
+                "artist_name": album.get("artist", {}).get("name"),
+                "release_date": album.get("release_date_components", {}) or album.get("release_date"),
+                "url": album.get("url"),
+            })
+    logger.info("search_album | returned %d results", len(results))
+    return results
+
+
+@mcp.tool()
+async def get_artist_albums(
+    artist_id: int,
+    per_page: int = 20,
+    page: int = 1,
+) -> list[dict]:
+    """Retrieve the full discography of an artist as a list of albums with album_id values.
+
+    Use this after search_artist to explore an artist's catalog at the album level.
+    The returned album_id values can be passed to get_album_details to fetch the
+    tracklist and metadata for any album.
+
+    Args:
+        artist_id: The Genius artist ID (obtained from search_artist)
+        per_page: Number of albums to return (max 50, default 20)
+        page: Page number for pagination (default 1)
+    """
+    logger.info("get_artist_albums | artist_id=%d per_page=%d page=%d", artist_id, per_page, page)
+    try:
+        data = await genius_api.get_artist_albums(artist_id, per_page=per_page, page=page)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
+
+    results = [
+        {
+            "album_id": a.get("id"),
+            "name": a.get("name"),
+            "release_date": a.get("release_date_components", {}) or a.get("release_date"),
+            "url": a.get("url"),
+        }
+        for a in data.get("albums", [])
+    ]
+    logger.info("get_artist_albums | returned %d albums", len(results))
+    return results
+
+
+@mcp.tool()
+async def get_album_details(album_id: int) -> dict:
+    """Fetch metadata and full tracklist for a specific album by its Genius album ID.
+
+    Returns the album's title, artist, release date, description, and an ordered
+    tracklist. Each track includes a song_id so the LLM can chain directly into
+    tools like get_song_annotations or get_song_details.
+
+    Args:
+        album_id: The Genius album ID (obtained from search_album or get_artist_albums)
+    """
+    logger.info("get_album_details | album_id=%d", album_id)
+    try:
+        album_data, tracks_data = await asyncio.gather(
+            genius_api.get_album(album_id),
+            genius_api.get_album_tracks(album_id),
+        )
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
+
+    album = album_data
+    desc_ann = album.get("description_annotation", {})
+    desc_body = desc_ann.get("annotations", [{}])[0].get("body", {})
+    description = desc_body.get("plain", "") if isinstance(desc_body, dict) else ""
+
+    tracks = [
+        {
+            "track_number": t.get("number"),
+            "song_id": t.get("song", {}).get("id"),
+            "title": t.get("song", {}).get("title"),
+            "url": t.get("song", {}).get("url"),
+            "annotation_count": t.get("song", {}).get("annotation_count"),
+        }
+        for t in tracks_data.get("tracks", [])
+    ]
+
+    result = {
+        "album_id": album.get("id"),
+        "name": album.get("name"),
+        "artist_name": album.get("artist", {}).get("name"),
+        "artist_id": album.get("artist", {}).get("id"),
+        "release_date": album.get("release_date_components", {}) or album.get("release_date"),
+        "url": album.get("url"),
+        "description": description,
+        "tracks": tracks,
+    }
+    logger.info("get_album_details | name=%r tracks=%d", result["name"], len(tracks))
+    return result

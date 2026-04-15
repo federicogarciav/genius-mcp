@@ -37,7 +37,7 @@ The Genius MCP Server exposes the Genius.com knowledge base to any MCP-compatibl
 - **Search** for songs and artists by name
 - **Fetch full song metadata** — title, album, release date, lyrics state, and Genius editorial descriptions
 - **Fetch artist profiles** — bio, follower count, verification status
-- **Browse an artist's discography** sorted by popularity or release date
+- **Browse an artist's discography** — sorted by popularity or release date, or as a full album list with tracklists
 - **Read annotations** — community and artist-verified explanations of specific lyric fragments, each tagged with a trust level so the AI knows how much weight to give them
 - **Run pre-built analysis prompts** that gather all relevant data in one shot and ask the AI for a deep analysis of a song or artist
 
@@ -56,7 +56,10 @@ Some tools call the **official Genius API** (`api.genius.com`) using your access
 | `get_artist_songs` | List songs by an artist, sortable by `popularity` or `release_date`, with pagination. | Official API |
 | `get_song_annotations` | Fetch all annotations for a song, optionally filtered by trust level (`artist_verified`, `accepted`, `unreviewed`). | Official API |
 | `get_annotation_detail` | Fetch the full text and metadata of a single annotation by its ID. | Official API |
-| `get_song_questions` | Fetch user-submitted questions and answers for a song, with pagination. Only questions that have an accepted answer are returned. | `lyricsgenius` (public undocumented API) |
+| `get_song_questions_and_answers` | Fetch user-submitted questions and answers for a song, with pagination. Only questions that have an accepted answer are returned. | `lyricsgenius` (public undocumented API) |
+| `search_album` | Search Genius for albums matching a query. Returns album IDs, names, artist names, and release dates. | `lyricsgenius` (public undocumented API) |
+| `get_artist_albums` | Retrieve the full discography of an artist as a paginated list of albums with album IDs. | `lyricsgenius` (public undocumented API) |
+| `get_album_details` | Fetch metadata and full ordered tracklist for an album by its Genius album ID. Each track includes its song ID for chaining into other tools. | Official API |
 
 ---
 
