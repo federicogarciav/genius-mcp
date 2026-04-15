@@ -168,6 +168,25 @@ async def get_album_tracks(album_id: int, per_page: int = 50, page: int = 1) -> 
     return response.json().get("response", {})
 
 
+async def get_album_cover_arts(album_id: int) -> list[dict]:
+    """Calls lyricsgenius.PublicAPI.cover_arts(album_id=...). Returns the cover_arts list.
+    Annotation bodies are embedded in each cover art object when text_format is set.
+    Raises GeniusAPIError on failure."""
+    endpoint = f"genius.com/api/cover_arts (album_id={album_id})"
+    try:
+        result = await asyncio.to_thread(
+            _public_api.cover_arts, album_id=album_id, text_format="plain"
+        )
+    except AssertionError as e:
+        parts = str(e).split("status code: ")
+        status_code = int(parts[1].split(".")[0]) if len(parts) > 1 else 0
+        logger.error("GET %s failed | album_id=%d status=%d", endpoint, album_id, status_code)
+        raise GeniusAPIError(status_code, endpoint) from e
+    logger.debug("GET %s (album_id=%d) → 200", endpoint, album_id)
+    return result.get("cover_arts", [])
+
+
+
 async def get_song_questions(
     song_id: int,
     per_page: int = 20,

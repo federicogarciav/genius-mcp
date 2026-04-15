@@ -417,20 +417,33 @@ async def get_artist_albums(
 
 @mcp.tool()
 async def get_album_details(album_id: int) -> dict:
-    """Fetch metadata and full tracklist for a specific album by its Genius album ID.
+    """Fetch metadata, full tracklist, and cover art info for a specific album by its Genius album ID.
 
     Returns the album's title, artist, release date, description, and an ordered
     tracklist. Each track includes a song_id so the LLM can chain directly into
     tools like get_song_annotations or get_song_details.
 
+    Also returns a cover_arts list. The first entry is always the main album cover.
+    Each entry includes the cover_art_id and, if annotated, an annotation_id.
+    Call get_cover_art_annotations with cover_art_id (and album_id) to read the
+    full annotation content for any annotated artwork.
+
     Args:
         album_id: The Genius album ID (obtained from search_album or get_artist_albums)
     """
     logger.info("get_album_details | album_id=%d", album_id)
+
+    async def _get_cover_arts_safe() -> list[dict]:
+        try:
+            return await genius_api.get_album_cover_arts(album_id)
+        except GeniusAPIError:
+            return []
+
     try:
-        album_data, tracks_data = await asyncio.gather(
+        album_data, tracks_data, cover_arts_raw = await asyncio.gather(
             genius_api.get_album(album_id),
             genius_api.get_album_tracks(album_id),
+            _get_cover_arts_safe(),
         )
     except GeniusAPIError as e:
         return {"error": f"Genius API returned status {e.status_code}"}
@@ -451,6 +464,23 @@ async def get_album_details(album_id: int) -> dict:
         for t in tracks_data.get("tracks", [])
     ]
 
+    def _cover_art_annotation_id(art: dict) -> Optional[int]:
+        annotations = art.get("description_annotation", {}).get("annotations", [])
+        return annotations[0].get("id") if annotations else None
+
+    cover_arts = []
+    for i, art in enumerate(cover_arts_raw):
+        entry: dict = {
+            "cover_art_id": art.get("id"),
+            "image_url": art.get("image_url"),
+        }
+        if i == 0:
+            entry["note"] = "main album cover"
+        annotation_id = _cover_art_annotation_id(art) if art.get("annotated") else None
+        if annotation_id is not None:
+            entry["annotation_id"] = annotation_id
+        cover_arts.append(entry)
+
     result = {
         "album_id": album.get("id"),
         "name": album.get("name"),
@@ -460,6 +490,69 @@ async def get_album_details(album_id: int) -> dict:
         "url": album.get("url"),
         "description": description,
         "tracks": tracks,
+        "cover_arts": cover_arts,
     }
-    logger.info("get_album_details | name=%r tracks=%d", result["name"], len(tracks))
+    logger.info(
+        "get_album_details | name=%r tracks=%d cover_arts=%d",
+        result["name"], len(tracks), len(cover_arts),
+    )
+    return result
+
+
+@mcp.tool()
+async def get_cover_art_annotations(cover_art_id: int, album_id: int) -> dict:
+    """Fetch the annotation written on a specific album cover art image.
+
+    On Genius, cover art images are annotatable — community members and artists can write
+    an annotation about visual elements, symbolism, and artistic choices in the artwork.
+
+    Use get_album_details first to get cover_art_id and album_id values.
+    Only call this tool for cover arts where has_annotations is True — the annotation
+    content is also available inline in get_album_details under the annotation field.
+
+    Trust levels:
+    - "artist_verified": confirmed by the artist
+    - "accepted": reviewed by Genius editorial staff
+    - "unreviewed": community-submitted, not yet reviewed
+
+    Args:
+        cover_art_id: The Genius cover art ID (from the cover_arts list in get_album_details)
+        album_id: The Genius album ID (same album_id used in get_album_details)
+    """
+    logger.info("get_cover_art_annotations | cover_art_id=%d album_id=%d", cover_art_id, album_id)
+    try:
+        cover_arts = await genius_api.get_album_cover_arts(album_id)
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
+
+    art = next((a for a in cover_arts if a.get("id") == cover_art_id), None)
+    if art is None:
+        return {"error": f"Cover art {cover_art_id} not found in album {album_id}"}
+
+    desc_ann = art.get("description_annotation", {})
+    annotations = desc_ann.get("annotations", [])
+    if not annotations:
+        return {"info": "No annotation found for this cover art."}
+
+    ann = annotations[0]
+    body_raw = ann.get("body", {})
+    body = body_raw.get("plain", "") if isinstance(body_raw, dict) else ""
+    authors = [
+        {"username": a.get("user", {}).get("login", ""), "iq": a.get("pinned_role")}
+        for a in ann.get("authors", [])
+    ]
+    result = {
+        "cover_art_id": cover_art_id,
+        "image_url": art.get("image_url"),
+        "annotation_id": ann.get("id"),
+        "body": body,
+        "trust_level": compute_trust_level(ann),
+        "state": ann.get("state"),
+        "votes_total": ann.get("votes_total", 0),
+        "authors": authors,
+    }
+    logger.info(
+        "get_cover_art_annotations | cover_art_id=%d trust_level=%r votes=%d",
+        cover_art_id, result["trust_level"], result["votes_total"],
+    )
     return result
