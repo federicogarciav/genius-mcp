@@ -149,6 +149,96 @@ async def get_song_details(song_id: int) -> dict:
 
 
 @mcp.tool()
+async def get_song_relationships(song_id: int) -> list[dict]:
+    """Fetch the musical relationships for a song — samples, interpolations, covers, remixes, and translations.
+
+    Each relationship type links this song to other songs on Genius. Knowing a song
+    samples a specific record is often the key to understanding its lyrical references
+    and creative context. Only relationship types with at least one song are returned.
+
+    Relationship types: samples, sampled_in, interpolates, interpolated_by, cover_of,
+    covered_by, remix_of, remixed_by, translation_of, live_version_of.
+
+    Args:
+        song_id: The Genius song ID (obtained from search_song)
+    """
+    logger.info("get_song_relationships | song_id=%d", song_id)
+    try:
+        song = await genius_api.get_song(song_id)
+    except GeniusAPIError as e:
+        return [{"error": f"Genius API returned status {e.status_code}"}]
+
+    relationships = []
+    for rel in song.get("song_relationships", []):
+        songs = rel.get("songs", [])
+        if not songs:
+            continue
+        relationships.append({
+            "type": rel.get("type"),
+            "songs": [
+                {
+                    "song_id": s.get("id"),
+                    "title": s.get("title"),
+                    "artist_name": s.get("primary_artist", {}).get("name"),
+                    "url": s.get("url"),
+                }
+                for s in songs
+            ],
+        })
+    logger.info("get_song_relationships | song_id=%d returned %d relationship types", song_id, len(relationships))
+    return relationships
+
+
+@mcp.tool()
+async def get_song_credits(song_id: int) -> dict:
+    """Fetch the writing, production, and performance credits for a song.
+
+    Returns the writers, producers, featured artists, and any additional custom
+    performance credits (e.g. mixing engineer, label, recording studio). Useful for
+    understanding the commercial and creative context around a song.
+
+    Args:
+        song_id: The Genius song ID (obtained from search_song)
+    """
+    logger.info("get_song_credits | song_id=%d", song_id)
+    try:
+        song = await genius_api.get_song(song_id)
+    except GeniusAPIError as e:
+        return {"error": f"Genius API returned status {e.status_code}"}
+
+    def _extract_artists(artist_list: list) -> list[dict]:
+        return [
+            {"artist_id": a.get("id"), "name": a.get("name"), "url": a.get("url")}
+            for a in artist_list
+        ]
+
+    custom_performances = [
+        {
+            "label": cp.get("label"),
+            "artists": _extract_artists(cp.get("artists", [])),
+        }
+        for cp in song.get("custom_performances", [])
+    ]
+
+    result = {
+        "song_id": song.get("id"),
+        "title": song.get("title"),
+        "writers": _extract_artists(song.get("writer_artists", [])),
+        "producers": _extract_artists(song.get("producer_artists", [])),
+        "featured_artists": _extract_artists(song.get("featured_artists", [])),
+        "custom_performances": custom_performances,
+    }
+    logger.info(
+        "get_song_credits | song_id=%d writers=%d producers=%d featured=%d",
+        song_id,
+        len(result["writers"]),
+        len(result["producers"]),
+        len(result["featured_artists"]),
+    )
+    return result
+
+
+@mcp.tool()
 async def get_artist_details(artist_id: int) -> dict:
     """Fetch full profile and editorial bio for a specific artist by their Genius artist ID.
 

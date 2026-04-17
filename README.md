@@ -6,7 +6,7 @@
 
 **An MCP server that brings the power of [Genius](https://genius.com) into your AI assistant.**
 
-Query songs, artists, lyrics annotations, album artwork annotations, and editorial knowledge through a clean set of tools and prompts — powered by both the official Genius API and the `lyricsgenius` Python library.
+Query songs, artists, lyrics annotations, album artwork annotations, song relationships, credits, and editorial knowledge through a clean set of tools and prompts — powered by both the official Genius API and the `lyricsgenius` Python library.
 
 </div>
 
@@ -40,6 +40,8 @@ The Genius MCP Server exposes the Genius.com knowledge base to any MCP-compatibl
 - **Browse an artist's discography** — sorted by popularity or release date, or as a full album list with tracklists
 - **Read annotations** — community and artist-verified explanations of specific lyric fragments, each tagged with a trust level so the AI knows how much weight to give them
 - **Read album artwork annotations** — community explanations of visual elements, symbolism, and artistic choices written directly on album cover art images
+- **Explore song relationships** — discover what a song samples, interpolates, covers, or remixes, and what later songs sampled it in turn
+- **Look up song credits** — writers, producers, featured artists, and custom performance roles (mixing engineer, recording studio, label)
 - **Run pre-built analysis prompts** that gather all relevant data in one shot and ask the AI for a deep analysis of a song or artist
 
 ---
@@ -51,15 +53,17 @@ Some tools call the **official Genius API** (`api.genius.com`) using your access
 | Tool | Description | Backend |
 |---|---|---|
 | `search_song` | Search Genius for songs matching a query. Returns song IDs, titles, artists, and annotation counts. | Official API |
-| `search_artist` | Search Genius for an artist by name. Returns artist IDs and basic profile info. | Official API |
 | `get_song_details` | Fetch full metadata and editorial description for a song by its Genius ID. | Official API |
-| `get_artist_details` | Fetch full profile and editorial bio for an artist by their Genius ID. | Official API |
-| `get_artist_songs` | List songs by an artist, sortable by `popularity` or `release_date`, with pagination. | Official API |
 | `get_song_annotations` | Fetch all annotations for a song, optionally filtered by trust level (`artist_verified`, `accepted`, `unreviewed`). | Official API |
 | `get_annotation_detail` | Fetch the full text and metadata of a single annotation by its ID. | Official API |
 | `get_song_questions_and_answers` | Fetch user-submitted questions and answers for a song, with pagination. Only questions that have an accepted answer are returned. | `lyricsgenius` (public undocumented API) |
-| `search_album` | Search Genius for albums matching a query. Returns album IDs, names, artist names, and release dates. | `lyricsgenius` (public undocumented API) |
+| `get_song_relationships` | Fetch the musical relationships for a song — what it samples, interpolates, covers, remixes, or translates, and which later songs sampled or covered it. Only relationship types with at least one linked song are returned. | Official API |
+| `get_song_credits` | Fetch writing and production credits for a song: writers, producers, featured artists, and custom performance roles (e.g. mixing engineer, recording studio, label). | Official API |
+| `search_artist` | Search Genius for an artist by name. Returns artist IDs and basic profile info. | Official API |
+| `get_artist_details` | Fetch full profile and editorial bio for an artist by their Genius ID. | Official API |
+| `get_artist_songs` | List songs by an artist, sortable by `popularity` or `release_date`, with pagination. | Official API |
 | `get_artist_albums` | Retrieve the full discography of an artist as a paginated list of albums with album IDs. | `lyricsgenius` (public undocumented API) |
+| `search_album` | Search Genius for albums matching a query. Returns album IDs, names, artist names, and release dates. | `lyricsgenius` (public undocumented API) |
 | `get_album_details` | Fetch metadata, full ordered tracklist, and cover art list for an album by its Genius album ID. Each track includes its song ID for chaining into other tools. The first cover art is always the main album cover; annotated artworks include an `annotation_id`. | Official API + `lyricsgenius` |
 | `get_cover_art_annotations` | Fetch the full annotation written on a specific album cover art image — body text, trust level, authors, and vote count. Requires `cover_art_id` and `album_id` (both available from `get_album_details`). Only call for cover arts that have an `annotation_id`. | `lyricsgenius` (public undocumented API) |
 
