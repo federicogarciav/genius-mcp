@@ -72,8 +72,6 @@ async def search_artist(query: str, per_page: int = 5) -> list[dict]:
 
     Use this when the user wants to explore an artist's profile, bio, or discography.
     Returns artist IDs required for fetching artist details or song lists.
-    Note: followers_count is not available in search results — call get_artist_details
-    with the returned artist_id to get the full profile including followers.
 
     Args:
         query: The artist name
@@ -111,9 +109,8 @@ async def search_artist(query: str, per_page: int = 5) -> list[dict]:
 async def get_song_details(song_id: int) -> dict:
     """Fetch full metadata and editorial information for a specific song by its Genius song ID.
 
-    Includes the song's editorial description written by Genius editors, which often
-    explains the song's themes, context, and meaning. Always call this before fetching
-    annotations to get the full picture.
+    Includes the song's editorial description (also known as Song Bio) written by Genius editors, which often
+    explains the song's themes, context, and meaning. It gives the full picture of the song before diving deeper with annotations.
 
     Args:
         song_id: The Genius song ID (obtained from search_song)
@@ -316,13 +313,14 @@ async def get_song_annotations(
     """Fetch all annotations for a song.
 
     Each annotation corresponds to a highlighted lyric fragment and contains a community
-    or artist explanation of its meaning. Annotations include a trust level field so the
-    LLM can reason about their reliability.
+    or artist explanation of its meaning. Annotations include a trust level field to verify their reliability.
 
     Trust levels (in descending order of reliability):
     - "artist_verified": written or confirmed by the artist. Treat as ground truth.
     - "accepted": reviewed and approved by Genius editorial staff. High quality.
     - "unreviewed": submitted by community users, not yet reviewed. Treat as interpretation.
+
+    The tool returns all annotations (in fragments). To read a specific annotation in depth, use get_annotation_detail tool with the annotation_id.
 
     Args:
         song_id: The Genius song ID
@@ -359,7 +357,7 @@ async def get_song_annotations(
 async def get_annotation_detail(annotation_id: int) -> dict:
     """Fetch the full detail of a single annotation by its ID.
 
-    Use this when the LLM wants to read a specific annotation in depth, for example
+    Use this to read a specific annotation in depth, for example
     after identifying its ID from get_song_annotations.
 
     Args:
@@ -442,7 +440,7 @@ async def search_album(query: str, per_page: int = 5) -> list[dict]:
     """Search Genius for albums matching a query.
 
     Use this when the user provides an album name and wants to find its Genius ID.
-    Returns a list of album matches with their album_id values, which are required  for get_album_details.
+    Returns a list of album matches with their album_id values, which are required for get_album_details.
 
     Args:
         query: The album name to search for
@@ -510,7 +508,7 @@ async def get_album_details(album_id: int) -> dict:
     """Fetch metadata, full tracklist, and cover art info for a specific album by its Genius album ID.
 
     Returns the album's title, artist, release date, description, and an ordered
-    tracklist. Each track includes a song_id so the LLM can chain directly into
+    tracklist. Each track includes a song_id to chain directly into
     tools like get_song_annotations or get_song_details.
 
     Also returns a cover_arts list. The first entry is always the main album cover.
